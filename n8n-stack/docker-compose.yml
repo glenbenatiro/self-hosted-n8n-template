@@ -1,0 +1,154 @@
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    container_name: n8n-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST_AUTH_METHOD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  redis:
+    image: redis:8.2.1-alpine
+    container_name: n8n-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  n8n-web:
+    image: n8nio/n8n:1.112.0
+    container_name: n8n-web
+    restart: unless-stopped
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_EDITOR_BASE_URL=https://${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}
+      - N8N_HOST=${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}/
+      - TZ=${GENERIC_TIMEZONE}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - N8N_LOG_LEVEL=info
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_PASSWORD=${REDIS_PASSWORD}
+      - NODE_ENV=production
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=true
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_PROXY_HOPS=1
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - internal
+      - web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.n8n-editor.rule=Host(`${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.n8n-editor.entrypoints=websecure"
+      - "traefik.http.routers.n8n-editor.tls=true"
+      - "traefik.http.routers.n8n-editor.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.n8n-editor.service=n8n-service"
+      - "traefik.http.routers.n8n-webhook.rule=Host(`${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.n8n-webhook.entrypoints=websecure"
+      - "traefik.http.routers.n8n-webhook.tls=true"
+      - "traefik.http.routers.n8n-webhook.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.n8n-webhook.service=n8n-service"
+      - "traefik.http.services.n8n-service.loadbalancer.server.port=5678"
+      - "traefik.http.middlewares.n8n-ws.headers.customrequestheaders.Upgrade=websocket"
+      - "traefik.http.middlewares.n8n-ws.headers.customrequestheaders.Connection=Upgrade"
+
+  n8n-worker:
+    image: n8nio/n8n:1.112.0
+    restart: unless-stopped
+    command: worker
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - TZ=${GENERIC_TIMEZONE}
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_PASSWORD=${REDIS_PASSWORD}
+      - NODE_ENV=production
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=true
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  web:
+    external: true
+  internal:
+    external: true
+
+volumes:
+  postgres_data:
+  redis_data:
