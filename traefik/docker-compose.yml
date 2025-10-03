@@ -15,19 +15,19 @@ services:
       - "./traefik.yml:/etc/traefik/traefik.yml:ro"
       - "./dynamic:/etc/traefik/dynamic:ro"
       - "./acme.json:/etc/traefik/acme.json"
-      #- "/var/log/traefik.log:/var/log/traefik.log"
+      - "/var/log/traefik.log:/var/log/traefik.log"
     labels:
       - "traefik.enable=true"
 
       # --- Router: Traefik Dashboard ---
-      #- "traefik.http.routers.traefik-dashboard.rule=Host(`${TRAEFIK_DASHBOARD_DOMAIN}`)"
-      #- "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
-      #- "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
-      #- "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`${TRAEFIK_DASHBOARD_DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
 
       # --- Middleware: Basic Auth ---
-      #- "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_BASIC_AUTH_USER_PASS}"
-      #- "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_BASIC_AUTH_USER_PASS}"
+      - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth"
 
 networks:
   web:

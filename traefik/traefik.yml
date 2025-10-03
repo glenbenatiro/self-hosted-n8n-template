@@ -1,10 +1,9 @@
-
 global:
   checkNewVersion: true
   sendAnonymousUsage: false
 
 api:
-  dashboard: false
+  dashboard: true
 
 providers:
   docker:
@@ -29,16 +28,21 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "example@example.com"
+      email: ${ACME_EMAIL}
       storage: "/etc/traefik/acme.json"
       httpChallenge:
         entryPoint: web
 
 log:
   level: INFO
-  format: common
+  filePath: "/var/log/traefik.logs"
 
 tls:
   options:
     default:
       minVersion: VersionTLS12
+      sniStrict: true
+      cipherSuites:
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
