@@ -7,7 +7,6 @@ networks:
   web:
     external: true         
   internal:
-    external: true    
 
 x-all-shared: &all-shared
   networks:
@@ -20,7 +19,7 @@ x-all-shared: &all-shared
 
 x-n8n-shared: &n8n-shared
   restart: always
-  image: n8nio/n8n:1.116.0
+  image: n8nio/n8n:1.118.2
   environment: &n8n-shared-environment
     # Database
     # https://docs.n8n.io/hosting/configuration/environment-variables/database/
@@ -83,14 +82,14 @@ x-n8n-shared: &n8n-shared
     N8N_SMTP_USER: ${N8N_SMTP_USER}
     N8N_SMTP_PASS: ${N8N_SMTP_PASS}
     N8N_SMTP_SSL: "true"
-    N8N_SMTP_STARTTLS: "true"
+    # N8N_SMTP_STARTTLS: "true"
     N8N_INVITE_LINKS_EMAIL_ONLY: "true"
 
-    # for Docker?
+    # for Docker
     # https://docs.n8n.io/hosting/installation/docker/#starting-n8n
     TZ: ${GENERIC_TIMEZONE}
 
-    # not in docs
+    # extra
     NODE_ENV: production
   volumes:
     - n8n_data:/home/node/.n8n
@@ -100,7 +99,7 @@ x-n8n-shared: &n8n-shared
     postgres:
       condition: service_healthy
     redis:
-      condition: service_healthy
+      condition: service_healthy 
 
 services:
   postgres:
@@ -137,11 +136,9 @@ services:
   n8n-web:
     <<: [*all-shared, *n8n-shared]
     container_name: n8n-web
-    environment:
-      <<: *n8n-shared-environment
     networks:
       - internal
-      - web        
+      - web   
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
@@ -169,12 +166,8 @@ services:
 
   n8n-worker:
     <<: [*all-shared, *n8n-shared]
-    environment:
-      <<: *n8n-shared-environment
     command: worker
     depends_on:
       <<: *n8n-shared-depends-on
       n8n-web:
         condition: service_started
-    networks:
-      - internal
