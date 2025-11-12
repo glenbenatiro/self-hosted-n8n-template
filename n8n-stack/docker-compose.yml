@@ -2,6 +2,7 @@ volumes:
   postgres_data:
   n8n_data:
   redis_data:
+  clam_db:
 
 networks:
   web:
@@ -19,7 +20,7 @@ x-all-shared: &all-shared
 
 x-n8n-shared: &n8n-shared
   restart: always
-  image: n8nio/n8n:1.118.2
+  image: n8nio/n8n:1.120.1
   environment: &n8n-shared-environment
     # Database
     # https://docs.n8n.io/hosting/configuration/environment-variables/database/
@@ -100,6 +101,8 @@ x-n8n-shared: &n8n-shared
       condition: service_healthy
     redis:
       condition: service_healthy 
+    clamav:
+      condition: service_healthy
 
 services:
   postgres:
@@ -132,6 +135,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  clamav:
+    <<: *all-shared
+    image: ajilaag/clamav-rest:20251108
+    container_name: n8n-clamav
+    restart: always
+    volumes:
+      - clam_db:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   n8n-web:
     <<: [*all-shared, *n8n-shared]
