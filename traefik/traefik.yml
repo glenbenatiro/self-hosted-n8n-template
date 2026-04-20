@@ -28,14 +28,13 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: ${ACME_EMAIL}
+      email: "${ACME_EMAIL}"
       storage: "/etc/traefik/acme.json"
       httpChallenge:
         entryPoint: web
 
 log:
   level: INFO
-  filePath: "/var/log/traefik.logs"
 
 tls:
   options:
