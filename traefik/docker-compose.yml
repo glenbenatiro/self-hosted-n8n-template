@@ -15,7 +15,6 @@ services:
       - "./traefik.yml:/etc/traefik/traefik.yml:ro"
       - "./dynamic:/etc/traefik/dynamic:ro"
       - "./acme.json:/etc/traefik/acme.json"
-      - "/var/log/traefik.log:/var/log/traefik.log"
     labels:
       - "traefik.enable=true"
 
