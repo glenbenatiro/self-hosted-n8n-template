@@ -1,0 +1,8 @@
+local-files/*
+n8n_data/*
+pki/*
+
+!local-files/.gitkeep
+!pki/.gitkeep
+
+.env
