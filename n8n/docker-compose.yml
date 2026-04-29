@@ -1,0 +1,174 @@
+volumes:
+  postgres_data:
+  n8n_data:
+  redis_data:
+
+networks:
+  web:
+    external: true         
+  internal:
+
+x-all-shared: &all-shared
+  networks:
+    - internal
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-n8n-shared: &n8n-shared
+  restart: always
+  # https://github.com/n8n-io/n8n/releases
+  image: n8nio/n8n:2.14.2
+  environment: &n8n-shared-environment
+    # Database
+    # https://docs.n8n.io/hosting/configuration/environment-variables/database/
+    DB_TYPE: postgresdb
+    DB_POSTGRESDB_HOST: postgres
+    DB_POSTGRESDB_PORT: "5432"
+    DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+    DB_POSTGRESDB_USER: ${POSTGRES_USER}
+    DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+
+    # Deployment
+    # https://docs.n8n.io/hosting/configuration/environment-variables/deployment/
+    N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+    N8N_EDITOR_BASE_URL: "https://${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}"
+    N8N_PROTOCOL: ${N8N_PROTOCOL}
+    N8N_TEMPLATES_ENABLED: "true"
+    N8N_PROXY_HOPS: ${N8N_PROXY_HOPS}
+
+    # Endpoints
+    # https://docs.n8n.io/hosting/configuration/environment-variables/endpoints/
+    WEBHOOK_URL: "https://${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}/"
+
+    # Executions
+    # https://docs.n8n.io/hosting/configuration/environment-variables/executions/
+    EXECUTIONS_MODE: queue
+
+    # Logs
+    # https://docs.n8n.io/hosting/configuration/environment-variables/logs/
+    N8N_LOG_LEVEL: info
+    N8N_LOG_OUTPUT: console
+    N8N_LOG_FORMAT: text
+
+    # Queue mode
+    # https://docs.n8n.io/hosting/configuration/environment-variables/queue-mode/
+    OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
+    QUEUE_BULL_REDIS_HOST: redis
+    QUEUE_BULL_REDIS_PORT: "6379"
+    QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    QUEUE_HEALTH_CHECK_ACTIVE: "true"
+
+    # Security
+    # https://docs.n8n.io/hosting/configuration/environment-variables/security/
+    N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+    N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
+    N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+    N8N_GIT_NODE_DISABLE_BARE_REPOS: "true"
+
+    # Task runners
+    N8N_RUNNERS_ENABLED: "true"
+
+    # Timezone and localization
+    # https://docs.n8n.io/hosting/configuration/environment-variables/timezone-localization/
+    GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+
+    # User management and 2FA
+    # https://docs.n8n.io/hosting/configuration/environment-variables/user-management-smtp-2fa/
+    N8N_EMAIL_MODE: "smtp"
+    N8N_SMTP_HOST: ${N8N_SMTP_HOST}
+    N8N_SMTP_PORT: ${N8N_SMTP_PORT}
+    N8N_SMTP_USER: ${N8N_SMTP_USER}
+    N8N_SMTP_PASS: ${N8N_SMTP_PASS}
+    N8N_SMTP_SENDER: ${N8N_SMTP_SENDER}
+    N8N_SMTP_SSL: "true"
+    N8N_INVITE_LINKS_EMAIL_ONLY: "true"
+
+    # for Docker
+    # https://docs.n8n.io/hosting/installation/docker/#starting-n8n
+    TZ: ${GENERIC_TIMEZONE}
+
+    # extra
+    NODE_ENV: production
+  volumes:
+    - n8n_data:/home/node/.n8n
+    - ./local-files:/files
+    - ./pki:/opt/custom-certificates
+  depends_on: &n8n-shared-depends-on
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy 
+
+services:
+  postgres:
+    <<: *all-shared
+    image: postgres:17.6
+    container_name: n8n-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    <<: *all-shared
+    image: redis:8.2.1-alpine
+    container_name: n8n-redis
+    restart: always
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  n8n-web:
+    <<: [*all-shared, *n8n-shared]
+    container_name: n8n-web
+    networks:
+      - internal
+      - web   
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      # Security headers middleware
+      - "traefik.http.middlewares.n8n-headers.headers.STSSeconds=315360000"
+      - "traefik.http.middlewares.n8n-headers.headers.browserXSSFilter=true"
+      - "traefik.http.middlewares.n8n-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.n8n-headers.headers.forceSTSHeader=true"
+      - "traefik.http.middlewares.n8n-headers.headers.STSIncludeSubdomains=true"
+      - "traefik.http.middlewares.n8n-headers.headers.STSPreload=true"
+      # Editor router
+      - "traefik.http.routers.n8n-editor.rule=Host(`${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.n8n-editor.entrypoints=websecure"
+      - "traefik.http.routers.n8n-editor.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.n8n-editor.middlewares=n8n-headers"
+      - "traefik.http.routers.n8n-editor.service=n8n-service"
+      # Webhook router
+      - "traefik.http.routers.n8n-webhook.rule=Host(`${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.n8n-webhook.entrypoints=websecure"
+      - "traefik.http.routers.n8n-webhook.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.n8n-webhook.middlewares=n8n-headers"
+      - "traefik.http.routers.n8n-webhook.service=n8n-service"
+      # Backend service
+      - "traefik.http.services.n8n-service.loadbalancer.server.port=5678"
+
+  n8n-worker:
+    <<: [*all-shared, *n8n-shared]
+    command: worker
+    depends_on:
+      <<: *n8n-shared-depends-on
+      n8n-web:
+        condition: service_started

@@ -1,0 +1,23 @@
+services:
+  traefik:
+    image: "traefik:v3.5.2"
+    container_name: "traefik"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik.yml:/etc/traefik/traefik.yml:ro"
+      - "./dynamic:/etc/traefik/dynamic:ro"
+      - "./acme.json:/etc/traefik/acme.json"
+    labels:
+      - "traefik.enable=true"
+
+networks:
+  web:
+    external: true
