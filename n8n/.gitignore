@@ -1,8 +1,11 @@
 local-files/*
 n8n_data/*
 pki/*
+backups/*
 
 !local-files/.gitkeep
 !pki/.gitkeep
+!backups/.gitkeep
 
 .env
+update-n8n.log

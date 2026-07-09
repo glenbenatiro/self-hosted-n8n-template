@@ -20,7 +20,8 @@ x-all-shared: &all-shared
 x-n8n-shared: &n8n-shared
   restart: always
   # https://github.com/n8n-io/n8n/releases
-  image: n8nio/n8n:2.14.2
+  # :stable is the latest GA release. update-n8n.sh keeps it current (see README).
+  image: n8nio/n8n:stable
   environment: &n8n-shared-environment
     # Database
     # https://docs.n8n.io/hosting/configuration/environment-variables/database/
