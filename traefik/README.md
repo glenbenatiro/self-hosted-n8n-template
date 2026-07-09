@@ -1,10 +1,14 @@
 # Traefik
 
-Traefik v3 reverse proxy with automatic HTTPS via Let's Encrypt and security hardening.
+Traefik v3 reverse proxy with automatic HTTPS via Let's Encrypt and some sensible security defaults.
+
+Traefik is the front door for every other service. It owns ports 80 and 443, gets certificates
+automatically, redirects HTTP to HTTPS, and routes each request to the right container based on the
+hostname. Set this up before any service that needs to be reachable over HTTPS.
 
 ## Prerequisites
 
-- Docker + Docker Compose
+- Docker and Docker Compose
 - A domain with DNS pointing to your server
 
 ## Setup
@@ -14,12 +18,12 @@ Traefik v3 reverse proxy with automatic HTTPS via Let's Encrypt and security har
    cp .env.example .env
    ```
 
-2. Create the external Docker network (shared with all services):
+2. Create the external Docker network (shared with every service Traefik routes to):
    ```bash
    docker network create web
    ```
 
-3. Create and lock the ACME certificate storage file:
+3. Create and lock the file that stores your certificates:
    ```bash
    touch acme.json && chmod 600 acme.json
    ```
@@ -31,7 +35,7 @@ Traefik v3 reverse proxy with automatic HTTPS via Let's Encrypt and security har
 
 ## Exposing a service
 
-Add these labels to any service in the `web` network:
+Add these labels to any service that runs on the `web` network:
 
 ```yaml
 labels:
@@ -49,6 +53,8 @@ networks:
 
 ## Notes
 
-- TLS 1.2+ enforced with strong cipher suites (ECDHE only)
-- HTTP automatically redirects to HTTPS
-- Place dynamic config files (middleware, TLS overrides) in `dynamic/`
+- TLS 1.2 or higher is enforced, with strong cipher suites (ECDHE only).
+- HTTP automatically redirects to HTTPS.
+- The dashboard is turned off and anonymous usage reporting is disabled.
+- The `dynamic/` folder is for optional extra config, such as custom middleware or TLS overrides.
+  It is mounted read-only. Leave it empty if you do not need it.
