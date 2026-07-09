@@ -1,9 +1,13 @@
-# docker-compose-templates
+# Self-Hosted n8n Template
 
-Docker Compose templates for self-hosting services on a single VPS. These are production setups, not
-toy examples. The n8n stack has been running this way for about a year.
+A Docker Compose template for self-hosting n8n on a single VPS, with Traefik in front for HTTPS.
+It reflects a production setup that has been running for about a year, not a toy example.
 
-Each service lives in its own folder with its own `docker-compose.yml`, `.env.example`, and README.
+The stack is n8n in queue mode (PostgreSQL and Redis) behind a Traefik reverse proxy. Traefik lives
+in its own folder so it can be reused for other services too, but the focus here is a solid n8n
+deployment.
+
+Each part lives in its own folder with its own `docker-compose.yml`, `.env.example`, and README.
 Secrets and config are read from a `.env` file that is never committed. Domains, emails, and
 passwords are all pulled from environment variables, so nothing personal is baked into the files.
 
