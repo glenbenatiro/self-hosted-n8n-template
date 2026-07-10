@@ -9,6 +9,9 @@ providers:
   docker:
     watch: true
     exposedByDefault: false
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
 
 entryPoints:
   web:
@@ -22,16 +25,30 @@ entryPoints:
   websecure:
     address: ":443"
     http:
+      middlewares:
+        - "security-headers@file"      # shared security headers for every router (dynamic/security-headers.yml)
+        # - "cf-only@file"             # OPT-IN: only if behind Cloudflare (dynamic/cloudflare.yml + README)
       tls:
         certResolver: "letsencrypt"
 
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: "${ACME_EMAIL}"
+      # NOTE: Traefik does NOT expand ${ENV} in this static config file — set the email literally.
+      email: "your_email@example.com"
       storage: "/etc/traefik/acme.json"
+      # Default: HTTP-01 — needs inbound port 80 reachable. Fine for a plain public origin.
       httpChallenge:
         entryPoint: web
+      # Behind Cloudflare, or locking the origin down? Prefer DNS-01 — it needs no inbound
+      # port, so cert renewal can't be broken by a firewall/proxy. Comment out httpChallenge
+      # above and use this instead (requires CF_DNS_API_TOKEN in the environment — see
+      # docker-compose.yml and README):
+      # dnsChallenge:
+      #   provider: cloudflare
+      #   resolvers:
+      #     - "1.1.1.1:53"
+      #     - "8.8.8.8:53"
 
 log:
   level: INFO

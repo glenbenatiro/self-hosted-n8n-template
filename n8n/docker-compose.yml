@@ -144,24 +144,17 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
-      # Security headers middleware
-      - "traefik.http.middlewares.n8n-headers.headers.STSSeconds=315360000"
-      - "traefik.http.middlewares.n8n-headers.headers.browserXSSFilter=true"
-      - "traefik.http.middlewares.n8n-headers.headers.contentTypeNosniff=true"
-      - "traefik.http.middlewares.n8n-headers.headers.forceSTSHeader=true"
-      - "traefik.http.middlewares.n8n-headers.headers.STSIncludeSubdomains=true"
-      - "traefik.http.middlewares.n8n-headers.headers.STSPreload=true"
+      # Security headers come from the shared `security-headers` middleware applied at the
+      # Traefik entrypoint (traefik/dynamic/security-headers.yml) — no per-service labels.
       # Editor router
       - "traefik.http.routers.n8n-editor.rule=Host(`${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}`)"
       - "traefik.http.routers.n8n-editor.entrypoints=websecure"
       - "traefik.http.routers.n8n-editor.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.n8n-editor.middlewares=n8n-headers"
       - "traefik.http.routers.n8n-editor.service=n8n-service"
       # Webhook router
       - "traefik.http.routers.n8n-webhook.rule=Host(`${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}`)"
       - "traefik.http.routers.n8n-webhook.entrypoints=websecure"
       - "traefik.http.routers.n8n-webhook.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.n8n-webhook.middlewares=n8n-headers"
       - "traefik.http.routers.n8n-webhook.service=n8n-service"
       # Backend service
       - "traefik.http.services.n8n-service.loadbalancer.server.port=5678"

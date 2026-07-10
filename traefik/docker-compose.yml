@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: "traefik:v3.5.2"
+    image: "traefik:v3.7.7"
     container_name: "traefik"
     restart: unless-stopped
     security_opt:
@@ -8,6 +8,8 @@ services:
     networks:
       - web
     ports:
+      # Locked to Cloudflare (IPv4-only)? Bind IPv4 explicitly so there's no public IPv6
+      # listener to bypass the firewall: "0.0.0.0:80:80" / "0.0.0.0:443:443".
       - "80:80"
       - "443:443"
     volumes:
@@ -15,6 +17,9 @@ services:
       - "./traefik.yml:/etc/traefik/traefik.yml:ro"
       - "./dynamic:/etc/traefik/dynamic:ro"
       - "./acme.json:/etc/traefik/acme.json"
+    # environment:
+    #   # Only needed for the DNS-01 challenge (see traefik.yml). Set CF_DNS_API_TOKEN in .env.
+    #   - "CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}"
     labels:
       - "traefik.enable=true"
 
