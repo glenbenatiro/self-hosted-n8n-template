@@ -1,0 +1,14 @@
+# Shared security-response-headers middleware.
+# Attached once at the `websecure` entrypoint in traefik.yml, so EVERY HTTPS router
+# gets identical headers — no per-service labels, no drift. Edit here to change all sites.
+http:
+  middlewares:
+    security-headers:
+      headers:
+        stsSeconds: 31536000         # HSTS — 1 year (minimum for preload eligibility)
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        contentTypeNosniff: true     # X-Content-Type-Options: nosniff
+        browserXSSFilter: true       # X-XSS-Protection: 1; mode=block (legacy, harmless)
+        frameDeny: true              # X-Frame-Options: DENY — remove if a service must be embedded in an iframe
