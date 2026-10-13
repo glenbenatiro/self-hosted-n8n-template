@@ -1,6 +1,9 @@
+# Pinned project name: keeps the container and network names the same wherever this folder lives.
+name: traefik
+
 services:
   traefik:
-    image: "traefik:v3.7.7"
+    image: "traefik:v3.7.14"
     container_name: "traefik"
     restart: unless-stopped
     security_opt:
@@ -8,20 +11,30 @@ services:
     networks:
       - web
     ports:
-      # Locked to Cloudflare (IPv4-only)? Bind IPv4 explicitly so there's no public IPv6
-      # listener to bypass the firewall: "0.0.0.0:80:80" / "0.0.0.0:443:443".
-      - "80:80"
-      - "443:443"
+      # IPv4 only. Docker publishes a bare "80:80" on IPv6 as well, and Docker's port rules
+      # bypass the host firewall. Add "[::]:80:80" and "[::]:443:443" only if you need IPv6.
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./traefik.yml:/etc/traefik/traefik.yml:ro"
       - "./dynamic:/etc/traefik/dynamic:ro"
       - "./acme.json:/etc/traefik/acme.json"
-    # environment:
-    #   # Only needed for the DNS-01 challenge (see traefik.yml). Set CF_DNS_API_TOKEN in .env.
-    #   - "CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}"
-    labels:
-      - "traefik.enable=true"
+      - "./logs:/etc/traefik/logs"
+    environment:
+      # Only used by the DNS-01 challenge in traefik.cloudflare.example.yml. Set it in .env.
+      - "CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   web:

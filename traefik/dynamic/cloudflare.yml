@@ -1,15 +1,15 @@
-# OPT-IN — only for origins that sit behind the Cloudflare proxy (orange cloud).
+# Only for origins behind the Cloudflare proxy (orange cloud).
 #
 # Defines a `cf-only` middleware that rejects (403) any request whose source IP is not a
 # Cloudflare edge range. Because Cloudflare proxies the connection, the source IP Traefik
 # sees IS the Cloudflare edge IP, so the default IP strategy is correct here.
 #
-# To enable: uncomment `- "cf-only@file"` on the websecure entrypoint in traefik.yml, and
-# pair it with a cloud-firewall rule that restricts inbound 80/443 to these same ranges
-# (see https://github.com/glenbenatiro/vps-hardening §10.8). Do NOT enable this if you are
-# not behind Cloudflare — it will 403 all traffic.
+# traefik.cloudflare.example.yml attaches it to the websecure entrypoint. Pair it with a
+# cloud-firewall rule that restricts inbound 80/443 to these same ranges
+# (see https://github.com/glenbenatiro/vps-hardening §10.8). Unused with traefik.example.yml.
 #
-# Ranges from https://www.cloudflare.com/ips-v4 and /ips-v6 — re-check before relying on them.
+# Ranges from https://www.cloudflare.com/ips-v4 and /ips-v6. The same list is in
+# traefik.cloudflare.example.yml (forwardedHeaders.trustedIPs): keep the two in sync.
 http:
   middlewares:
     cf-only:

@@ -5,7 +5,7 @@ http:
   middlewares:
     security-headers:
       headers:
-        stsSeconds: 31536000         # HSTS — 1 year (minimum for preload eligibility)
+        stsSeconds: 63072000         # HSTS: 2 years, the value hstspreload.org recommends
         stsIncludeSubdomains: true
         stsPreload: true
         forceSTSHeader: true

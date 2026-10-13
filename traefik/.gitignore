@@ -1,2 +1,5 @@
-acme.json
 .env
+acme.json
+traefik.yml
+logs/*
+!logs/.gitkeep
