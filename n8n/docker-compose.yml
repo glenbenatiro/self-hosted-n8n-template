@@ -1,3 +1,7 @@
+# Pinned project name: keeps container, volume and network names the same wherever this
+# folder lives (volumes are n8n_postgres_data, n8n_n8n_data and n8n_redis_data).
+name: n8n
+
 volumes:
   postgres_data:
   n8n_data:
@@ -5,12 +9,15 @@ volumes:
 
 networks:
   web:
-    external: true         
+    external: true
   internal:
+  # The task runner shares a network only with the worker it serves, so code from Code
+  # nodes cannot reach Postgres or Redis. `internal` also cuts it off from the internet:
+  # the Code node sandbox has no network access anyway.
+  runners-worker:
+    internal: true
 
-x-all-shared: &all-shared
-  networks:
-    - internal
+x-logging: &logging
   logging:
     driver: "json-file"
     options:
@@ -18,11 +25,17 @@ x-all-shared: &all-shared
       max-file: "5"
 
 x-n8n-shared: &n8n-shared
+  <<: *logging
   restart: always
+  # Pinned in .env. update-n8n.sh moves it to the newest :stable release (see README).
   # https://github.com/n8n-io/n8n/releases
-  # :stable is the latest GA release. update-n8n.sh keeps it current (see README).
-  image: n8nio/n8n:stable
-  environment: &n8n-shared-environment
+  image: n8nio/n8n:${N8N_VERSION:?set N8N_VERSION in .env}
+  security_opt:
+    - no-new-privileges:true
+  # Longer than N8N_GRACEFUL_SHUTDOWN_TIMEOUT, so running executions can finish before
+  # Docker kills the container on an update or restart.
+  stop_grace_period: 45s
+  environment:
     # Database
     # https://docs.n8n.io/hosting/configuration/environment-variables/database/
     DB_TYPE: postgresdb
@@ -39,10 +52,12 @@ x-n8n-shared: &n8n-shared
     N8N_PROTOCOL: ${N8N_PROTOCOL}
     N8N_TEMPLATES_ENABLED: "true"
     N8N_PROXY_HOPS: ${N8N_PROXY_HOPS}
+    N8N_GRACEFUL_SHUTDOWN_TIMEOUT: "30"
+    N8N_DIAGNOSTICS_ENABLED: "false"
 
     # Endpoints
     # https://docs.n8n.io/hosting/configuration/environment-variables/endpoints/
-    WEBHOOK_URL: "https://${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}/"
+    N8N_WEBHOOK_URL: "https://${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}/"
 
     # Executions
     # https://docs.n8n.io/hosting/configuration/environment-variables/executions/
@@ -56,21 +71,48 @@ x-n8n-shared: &n8n-shared
 
     # Queue mode
     # https://docs.n8n.io/hosting/configuration/environment-variables/queue-mode/
+    # n8n 2.x only: n8n 3.0 always runs manual executions on workers and removes this variable.
     OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
     QUEUE_BULL_REDIS_HOST: redis
     QUEUE_BULL_REDIS_PORT: "6379"
     QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
     QUEUE_HEALTH_CHECK_ACTIVE: "true"
 
-    # Security
+    # Security. Most of these are already the default in n8n 2.x. They stay explicit so a
+    # changed default in a future release cannot quietly loosen them.
     # https://docs.n8n.io/hosting/configuration/environment-variables/security/
     N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
     N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
     N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
     N8N_GIT_NODE_DISABLE_BARE_REPOS: "true"
+    N8N_SECURE_COOKIE: "true"
+    # The Read/Write Files from Disk node may only use the mounted local-files folder.
+    N8N_RESTRICT_FILE_ACCESS_TO: /files
+    # Only verified community nodes. This is the n8n 3.0 default; set it to "true" only if you
+    # need an unverified community package from npm.
+    N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
 
-    # Task runners
-    N8N_RUNNERS_ENABLED: "true"
+    # Nodes. These are the n8n 3.0 defaults (2.x allowed 2 GiB and 5000 entries), set now so
+    # nothing changes on the upgrade. Raise them if you decompress larger archives.
+    # https://docs.n8n.io/hosting/configuration/environment-variables/nodes/
+    N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456"
+    N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
+
+    # Binary data folder. n8n 3.0 renames ~/.n8n/binaryData to ~/.n8n/storage and refuses to
+    # start if both exist. This does the rename now, on 2.x. Remove it once on n8n 3.0,
+    # which drops the variable.
+    N8N_MIGRATE_FS_STORAGE_PATH: "true"
+
+    # Task runners in external mode: Code node code runs in a separate runner container
+    # beside each worker, not inside n8n. The main instance needs no runner, because all
+    # executions (manual ones too) run on workers.
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-task-runners
+    N8N_RUNNERS_MODE: external
+    N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+    N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+    # Code node time limit in seconds. 60 is the n8n 3.0 default (2.x used 300). Raise it if
+    # a Code node needs longer.
+    N8N_RUNNERS_TASK_TIMEOUT: "60"
 
     # Timezone and localization
     # https://docs.n8n.io/hosting/configuration/environment-variables/timezone-localization/
@@ -96,19 +138,40 @@ x-n8n-shared: &n8n-shared
   volumes:
     - n8n_data:/home/node/.n8n
     - ./local-files:/files
-    - ./pki:/opt/custom-certificates
-  depends_on: &n8n-shared-depends-on
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy 
+  healthcheck:
+    # /healthz/readiness also checks the database and Redis connections. Workers serve it
+    # because QUEUE_HEALTH_CHECK_ACTIVE is on.
+    test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:5678/healthz/readiness || exit 1"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    # Database migrations run on the first start after an upgrade and can take a while.
+    start_period: 120s
+    start_interval: 5s
+
+x-runner-shared: &runner-shared
+  <<: *logging
+  restart: always
+  # Must be the same version as n8n. The distroless variant has no shell or package manager
+  # and runs as the unprivileged user 65532, with a read-only root filesystem.
+  # https://docs.n8n.io/deploy/host-n8n/configure-n8n/security/harden-task-runners
+  image: n8nio/runners:${N8N_VERSION:?set N8N_VERSION in .env}-distroless
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+  tmpfs:
+    - /tmp
 
 services:
   postgres:
-    <<: *all-shared
-    image: postgres:17.6
+    <<: *logging
+    image: postgres:17.11
     container_name: n8n-postgres
     restart: always
+    networks:
+      - internal
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -122,30 +185,38 @@ services:
       retries: 10
 
   redis:
-    <<: *all-shared
-    image: redis:8.2.1-alpine
+    <<: *logging
+    image: redis:8.10.2-alpine
     container_name: n8n-redis
     restart: always
+    networks:
+      - internal
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      # Lets the healthcheck's redis-cli log in without the password on its command line.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 10
 
   n8n-web:
-    <<: [*all-shared, *n8n-shared]
+    <<: *n8n-shared
     container_name: n8n-web
     networks:
       - internal
-      - web   
+      - web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=web"
-      # Security headers come from the shared `security-headers` middleware applied at the
-      # Traefik entrypoint (traefik/dynamic/security-headers.yml) — no per-service labels.
       # Editor router
       - "traefik.http.routers.n8n-editor.rule=Host(`${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}`)"
       - "traefik.http.routers.n8n-editor.entrypoints=websecure"
@@ -158,11 +229,32 @@ services:
       - "traefik.http.routers.n8n-webhook.service=n8n-service"
       # Backend service
       - "traefik.http.services.n8n-service.loadbalancer.server.port=5678"
+      # Security headers come from the shared `security-headers` middleware applied at the
+      # Traefik entrypoint (traefik/dynamic/security-headers.yml), so there are no per-service labels.
 
   n8n-worker:
-    <<: [*all-shared, *n8n-shared]
+    <<: *n8n-shared
+    container_name: n8n-worker
     command: worker
+    networks:
+      - internal
+      - runners-worker
     depends_on:
-      <<: *n8n-shared-depends-on
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # The main instance runs database migrations and the storage folder rename first.
       n8n-web:
-        condition: service_started
+        condition: service_healthy
+
+  n8n-worker-runner:
+    <<: *runner-shared
+    container_name: n8n-worker-runner
+    networks:
+      - runners-worker
+    environment:
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n-worker:5679
+    depends_on:
+      - n8n-worker

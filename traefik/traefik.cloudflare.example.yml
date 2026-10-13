@@ -1,0 +1,122 @@
+# Traefik static configuration for an origin behind the Cloudflare proxy (orange cloud).
+# Copy it to traefik.yml and set your ACME email:
+#   cp traefik.cloudflare.example.yml traefik.yml
+# It differs from traefik.example.yml in three ways:
+#   - certificates use the DNS-01 challenge, so renewal needs no inbound port
+#     (set CF_DNS_API_TOKEN in .env)
+#   - only Cloudflare's edge IPs may connect (cf-only middleware, dynamic/cloudflare.yml)
+#   - Traefik trusts the X-Forwarded-For header from Cloudflare, so services see the real
+#     visitor IP instead of a Cloudflare edge IP
+# Do NOT use it unless you are behind Cloudflare: it returns 403 to everyone else.
+# Traefik does NOT expand ${ENV} in this file, so values are written literally.
+
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+api:
+  dashboard: false
+
+# Used by the container healthcheck (`traefik healthcheck --ping`). Served on the internal
+# `traefik` entrypoint below (port 8080), which is not published.
+ping: {}
+
+providers:
+  docker:
+    watch: true
+    exposedByDefault: false
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      aliasHeadersStrategy: delete   # see websecure below
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    # Keep X-Forwarded-* headers only when they come from Cloudflare. From anyone else,
+    # Traefik strips them, so they cannot be spoofed. Same ranges as dynamic/cloudflare.yml,
+    # from https://www.cloudflare.com/ips-v4 and /ips-v6: keep the two lists in sync.
+    forwardedHeaders:
+      trustedIPs:
+        - "103.21.244.0/22"
+        - "103.22.200.0/22"
+        - "103.31.4.0/22"
+        - "104.16.0.0/13"
+        - "104.24.0.0/14"
+        - "108.162.192.0/18"
+        - "131.0.72.0/22"
+        - "141.101.64.0/18"
+        - "162.158.0.0/15"
+        - "172.64.0.0/13"
+        - "173.245.48.0/20"
+        - "188.114.96.0/20"
+        - "190.93.240.0/20"
+        - "197.234.240.0/22"
+        - "198.41.128.0/17"
+        - "2400:cb00::/32"
+        - "2405:8100::/32"
+        - "2405:b500::/32"
+        - "2606:4700::/32"
+        - "2803:f800::/32"
+        - "2a06:98c0::/29"
+        - "2c0f:f248::/32"
+    http:
+      # Drop request headers whose names only alias another header (X_Auth_User or X.Auth.User
+      # for X-Auth-User). PHP and other CGI-style backends read them as the same header, which
+      # allows spoofing.
+      aliasHeadersStrategy: delete
+      # Reject an encoded null (%00) or backslash (%5C) in the request path. Other encoded
+      # characters stay allowed, because some apps use them legitimately.
+      encodedCharacters:
+        allowEncodedNullCharacter: false
+        allowEncodedBackSlash: false
+      middlewares:
+        - "cf-only@file"               # 403 for anything that is not a Cloudflare edge IP (dynamic/cloudflare.yml)
+        - "security-headers@file"      # shared security headers for every router (dynamic/security-headers.yml)
+      tls:
+        certResolver: "letsencrypt"
+  # Internal only (not published): serves the ping healthcheck.
+  traefik:
+    address: ":8080"
+    http:
+      aliasHeadersStrategy: delete
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "your_email@example.com"
+      storage: "/etc/traefik/acme.json"
+      # DNS-01 through the Cloudflare API, using CF_DNS_API_TOKEN from the environment.
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+        - "1.1.1.1:53"
+        - "8.8.8.8:53"
+
+log:
+  level: INFO
+
+# Access log, written to ./logs on the host and rotated by logrotate.conf (see README).
+# Headers are dropped by default and only harmless ones kept: logging Authorization or
+# Cookie would write live session tokens to disk. Cf-Connecting-Ip is the visitor's IP.
+accessLog:
+  filePath: "/etc/traefik/logs/access.log"
+  format: json
+  bufferingSize: 100
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Cf-Connecting-Ip: keep
+        Cf-Ipcountry: keep
+        X-Forwarded-For: keep

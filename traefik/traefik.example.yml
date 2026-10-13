@@ -1,0 +1,82 @@
+# Traefik static configuration for an origin that is reached directly (not behind a proxy).
+# Copy it to traefik.yml and set your ACME email:
+#   cp traefik.example.yml traefik.yml
+# Behind the Cloudflare proxy? Use traefik.cloudflare.example.yml instead.
+# Traefik does NOT expand ${ENV} in this file, so values are written literally.
+
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+api:
+  dashboard: false
+
+# Used by the container healthcheck (`traefik healthcheck --ping`). Served on the internal
+# `traefik` entrypoint below (port 8080), which is not published.
+ping: {}
+
+providers:
+  docker:
+    watch: true
+    exposedByDefault: false
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      aliasHeadersStrategy: delete   # see websecure below
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      # Drop request headers whose names only alias another header (X_Auth_User or X.Auth.User
+      # for X-Auth-User). PHP and other CGI-style backends read them as the same header, which
+      # allows spoofing.
+      aliasHeadersStrategy: delete
+      # Reject an encoded null (%00) or backslash (%5C) in the request path. Other encoded
+      # characters stay allowed, because some apps use them legitimately.
+      encodedCharacters:
+        allowEncodedNullCharacter: false
+        allowEncodedBackSlash: false
+      middlewares:
+        - "security-headers@file"      # shared security headers for every router (dynamic/security-headers.yml)
+      tls:
+        certResolver: "letsencrypt"
+  # Internal only (not published): serves the ping healthcheck.
+  traefik:
+    address: ":8080"
+    http:
+      aliasHeadersStrategy: delete
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "your_email@example.com"
+      storage: "/etc/traefik/acme.json"
+      # HTTP-01 needs inbound port 80 reachable from the internet.
+      httpChallenge:
+        entryPoint: web
+
+log:
+  level: INFO
+
+# Access log, written to ./logs on the host and rotated by logrotate.conf (see README).
+# Headers are dropped by default and only harmless ones kept: logging Authorization or
+# Cookie would write live session tokens to disk.
+accessLog:
+  filePath: "/etc/traefik/logs/access.log"
+  format: json
+  bufferingSize: 100
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
