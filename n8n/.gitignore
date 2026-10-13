@@ -7,3 +7,4 @@ backups/*
 .env
 update-n8n.log*
 .update-n8n.lock
+docker-compose.override.yml

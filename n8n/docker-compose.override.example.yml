@@ -1,0 +1,32 @@
+# Adds a second worker, with its own task runner on its own internal network.
+# To use it, copy it to docker-compose.override.yml (git-ignored). Docker Compose loads that
+# file automatically, so `docker compose up -d --wait` and update-n8n.sh both include it:
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#   docker compose up -d --wait
+# For a third worker, repeat the pattern with -3 names.
+
+networks:
+  runners-worker-2:
+    internal: true
+
+services:
+  n8n-worker-2:
+    extends:
+      file: docker-compose.yml
+      service: n8n-worker
+    container_name: n8n-worker-2
+    networks: !override
+      - internal
+      - runners-worker-2
+
+  n8n-worker-2-runner:
+    extends:
+      file: docker-compose.yml
+      service: n8n-worker-runner
+    container_name: n8n-worker-2-runner
+    networks: !override
+      - runners-worker-2
+    environment:
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n-worker-2:5679
+    depends_on: !override
+      - n8n-worker-2

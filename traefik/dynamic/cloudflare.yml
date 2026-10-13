@@ -5,7 +5,7 @@
 # sees IS the Cloudflare edge IP, so the default IP strategy is correct here.
 #
 # traefik.cloudflare.example.yml attaches it to the websecure entrypoint. Pair it with a
-# cloud-firewall rule that restricts inbound 80/443 to these same ranges
+# cloud-firewall rule that restricts inbound ports 80 and 443 to these same ranges
 # (see https://github.com/glenbenatiro/vps-hardening §10.8). Unused with traefik.example.yml.
 #
 # Ranges from https://www.cloudflare.com/ips-v4 and /ips-v6. The same list is in

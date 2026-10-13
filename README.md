@@ -39,6 +39,30 @@ Start with the Traefik README, then the service you want:
 - [traefik/README.md](traefik/README.md)
 - [n8n/README.md](n8n/README.md)
 
+## Running a live server from a clone
+
+The folders are built so a live server can run straight from a clone of this repo. Your own files (`.env`, Traefik's `traefik.yml` and `acme.json`, n8n's `docker-compose.override.yml`, backups and logs) are git-ignored, so `git pull` never touches them.
+
+To update a live server to a newer version of this repo:
+
+1. Pull the changes and read what changed:
+   ```bash
+   git pull
+   git log -p ORIG_HEAD..HEAD
+   ```
+2. Add any new settings to each `.env`. This lists names that are in `.env.example` but missing from your `.env`:
+   ```bash
+   comm -23 <(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' .env.example | sort) <(sed -n 's/^\([A-Z0-9_]*\)=.*/\1/p' .env | sort)
+   ```
+3. For Traefik, compare your `traefik.yml` with the example you started from and copy over anything new:
+   ```bash
+   diff traefik.yml traefik.cloudflare.example.yml
+   ```
+4. Apply the changes, Traefik first, then each service. For n8n, back up the database first (see the n8n README):
+   ```bash
+   docker compose up -d --wait
+   ```
+
 ## A note on security
 
 Services bind only to internal Docker networks and publish no ports, so the only things exposed to the internet are Traefik's ports 80 and 443. Keep your `.env` files private (they hold real passwords and keys, so `chmod 600` them) and make sure `acme.json` stays `chmod 600`.
