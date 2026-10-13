@@ -82,7 +82,14 @@ Things to check in your own workflows: removed legacy nodes (Function, Cron, Rea
 
 ## Running more workers
 
-The compose file defines one worker with one task runner, which is plenty for most instances. Each worker needs its own runner pointed at it, so to add a second one, copy the `n8n-worker` and `n8n-worker-runner` services with new names (for example `n8n-worker-2` and `n8n-worker-2-runner` on a `runners-worker-2` network), and point the new runner's `N8N_RUNNERS_TASK_BROKER_URI` at the new worker.
+The compose file defines one worker with one task runner, which is plenty for most instances. Each worker needs its own runner, so workers cannot be added with `--scale`. To run a second worker, use the ready-made override file:
+
+```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
+docker compose up -d --wait
+```
+
+Docker Compose loads `docker-compose.override.yml` automatically, and it is git-ignored, so `git pull` and `update-n8n.sh` keep your extra worker. It adds `n8n-worker-2` with its own runner on its own internal network. For a third worker, repeat the pattern in the same file with `-3` names.
 
 ## Notes
 
