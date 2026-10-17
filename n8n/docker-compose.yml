@@ -27,7 +27,7 @@ x-logging: &logging
 x-n8n-shared: &n8n-shared
   <<: *logging
   restart: always
-  # Pinned in .env. update-n8n.sh moves it to the newest :stable release (see README).
+  # Pinned in .env. update-n8n.sh moves it to the newest release on N8N_UPDATE_CHANNEL (see README).
   # https://github.com/n8n-io/n8n/releases
   image: n8nio/n8n:${N8N_VERSION:?set N8N_VERSION in .env}
   security_opt:
