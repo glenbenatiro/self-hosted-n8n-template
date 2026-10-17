@@ -44,6 +44,7 @@ Traefik is the front door for every other service. It owns ports 80 and 443, get
    sed "s#/path/to/traefik#$PWD#" logrotate.conf | sudo tee /etc/logrotate.d/traefik
    sudo logrotate --debug /etc/logrotate.d/traefik
    ```
+   The rule copies the log and empties it in place, so it never signals the Traefik container. If you installed an earlier version of this rule (one with a `docker kill` line), run the same command again to replace it.
 
 `traefik.yml`, `.env`, `acme.json` and `logs/` hold your own settings, certificates and logs. They are git-ignored, so `git pull` never overwrites them. After pulling a new version of this repo, compare your `traefik.yml` with the example you started from (`diff traefik.yml traefik.cloudflare.example.yml`) and copy over anything new.
 
