@@ -32,9 +32,11 @@ x-n8n-shared: &n8n-shared
   image: n8nio/n8n:${N8N_VERSION:?set N8N_VERSION in .env}
   security_opt:
     - no-new-privileges:true
-  # Longer than N8N_GRACEFUL_SHUTDOWN_TIMEOUT, so running executions can finish before
-  # Docker kills the container on an update or restart.
-  stop_grace_period: 45s
+  # Longer than N8N_GRACEFUL_SHUTDOWN_TIMEOUT (60 s), so running executions can finish before
+  # Docker kills the container on an update or restart. 90 s also matches how long systemd
+  # lets the Docker service take to stop (TimeoutStopSec) when Docker itself restarts.
+  # https://docs.docker.com/reference/compose-file/services/#stop_grace_period
+  stop_grace_period: 90s
   environment:
     # Database
     # https://docs.n8n.io/hosting/configuration/environment-variables/database/
@@ -52,7 +54,8 @@ x-n8n-shared: &n8n-shared
     N8N_PROTOCOL: ${N8N_PROTOCOL}
     N8N_TEMPLATES_ENABLED: "true"
     N8N_PROXY_HOPS: ${N8N_PROXY_HOPS}
-    N8N_GRACEFUL_SHUTDOWN_TIMEOUT: "30"
+    # Seconds n8n waits for running executions to finish when it is stopped.
+    N8N_GRACEFUL_SHUTDOWN_TIMEOUT: "60"
     N8N_DIAGNOSTICS_ENABLED: "false"
 
     # Endpoints
