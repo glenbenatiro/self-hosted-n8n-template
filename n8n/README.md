@@ -47,20 +47,30 @@ Keep a copy of `N8N_ENCRYPTION_KEY` somewhere safe outside this server. Without 
 
 n8n and its task runner image are pinned to the same exact version, `N8N_VERSION` in `.env`. The runner image must always match n8n, so change the version only through `.env`, never in the compose file.
 
-`update-n8n.sh` moves the stack to the newest release on n8n's `stable` tag:
+`update-n8n.sh` moves the stack to the newest release on an n8n update channel. n8n publishes two: `stable` is the release for production use, and `beta` is the newest release, which may be unstable. Pick one per server with `N8N_UPDATE_CHANNEL` in `.env`. The script itself is the same everywhere; every per-server choice lives in `.env`:
 
-1. Reads the version `n8nio/n8n:stable` points at. If it is not newer than `N8N_VERSION`, it exits and changes nothing.
-2. Skips a new major version (for example 2.x to 3.x) unless `.env` sets `N8N_AUTO_UPDATE_MAJOR=true`. Major versions have breaking changes, so read them and check **Settings > Migration Report** in n8n first.
-3. Pulls the new n8n and runner images, then takes a compressed PostgreSQL backup into `backups/`. n8n database migrations run on startup and cannot be rolled back, so this backup is your safety net.
-4. Writes the new `N8N_VERSION` into `.env`, recreates the stack and waits for every container to report healthy.
-5. Deletes backups older than `RETENTION_DAYS` and removes old n8n images, keeping the previous version.
+| `.env` setting | Default | What it does |
+|---|---|---|
+| `N8N_UPDATE_CHANNEL` | `stable` | Follow `n8nio/n8n:stable` or `n8nio/n8n:beta`. |
+| `N8N_AUTO_UPDATE_MAJOR` | `false` | Set to `true` to also move to a new major version. |
+| `N8N_UPDATE_KEEP_BACKUPS` | `7` | How many database backups to keep, newest first. |
+| `N8N_VERSION` | (required) | The exact version running. The script updates this line; you only set it by hand when you first install or roll back. |
 
-The settings at the top of the script are `RETENTION_DAYS`, `LOG_MAX_BYTES` and `WAIT_TIMEOUT`. Log and backup timestamps use `GENERIC_TIMEZONE` from `.env`.
+Each run:
 
-Run it daily from cron. Cron uses the server's timezone (`timedatectl` shows it):
+1. Waits if an OS package upgrade (unattended-upgrades) is running, because it can restart Docker. After an hour it skips this run.
+2. Reads the version the channel tag points at. If it is not newer than `N8N_VERSION`, it exits and changes nothing. It never moves to an older version, so switching a server from `beta` back to `stable` takes effect once `stable` catches up.
+3. Skips a new major version (for example 2.x to 3.x) unless `N8N_AUTO_UPDATE_MAJOR=true`. Major versions have breaking changes, so read them and check **Settings > Migration Report** in n8n first.
+4. Pulls the new n8n image (and the matching runner image, if the stack uses task runners), then takes a compressed PostgreSQL backup into `backups/`, readable only by its owner. n8n database migrations run on startup and cannot be rolled back, so this backup is your safety net.
+5. Writes the new `N8N_VERSION` into `.env`, recreates the stack and waits for it to come up (every container healthy, where it has a health check).
+6. Keeps the newest `N8N_UPDATE_KEEP_BACKUPS` backups, whatever their age, and removes old n8n images, keeping the previous version. This only happens after a successful update.
+
+`update-n8n.sh --check` prints the channel, the running version and what a run would do, without changing the stack. Log and backup timestamps use `GENERIC_TIMEZONE` from `.env`. The settings at the top of the script (`LOG_MAX_BYTES`, `WAIT_TIMEOUT`, `APT_WAIT_MAX`) rarely need changing.
+
+Run it daily from cron. Cron uses the server's timezone (`timedatectl` shows it). Pick a time after the server's automatic OS upgrade and any reboot that follows it. Ubuntu runs that upgrade around 06:00 by default; check yours with `systemctl list-timers apt-daily-upgrade.timer`. For example, on a server whose OS upgrade runs at 03:00:
 
 ```cron
-0 3 * * * /path/to/n8n/update-n8n.sh
+0 4 * * * /path/to/n8n/update-n8n.sh
 ```
 
 Output is appended to `update-n8n.log` next to the script, which rotates to `update-n8n.log.1` when it grows past `LOG_MAX_BYTES`.
