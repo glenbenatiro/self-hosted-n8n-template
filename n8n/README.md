@@ -107,4 +107,5 @@ Docker Compose loads `docker-compose.override.yml` automatically, and it is git-
 - `local-files/` is mounted inside n8n at `/files`. The Read/Write Files from Disk node can only use that folder (`N8N_RESTRICT_FILE_ACCESS_TO`).
 - Custom CA certificates: add `- ./pki:/opt/custom-certificates` to the n8n volumes and put the certificates in `pki/`. The folder must be writable by the container's `node` user (UID 1000), because n8n's entrypoint indexes the certificates there on start.
 - The Execute Command and Local File Trigger nodes stay disabled, which is n8n's default since 2.0.
+- The public REST API is on, but its Swagger page (`/api/v1/docs`) is off (`N8N_PUBLIC_API_SWAGGERUI_DISABLED`), and Traefik answers 403 for its spec file (`/api/v1/openapi.yml`), which n8n serves whenever the public API is on. If nothing uses the API, add `N8N_PUBLIC_API_DISABLED: "true"` to the shared n8n environment in `docker-compose.yml`.
 - Dollar signs in passwords inside `.env` must be escaped by doubling them (`$$`), because Compose treats a single `$` as the start of a variable.
