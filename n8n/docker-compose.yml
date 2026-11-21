@@ -61,6 +61,9 @@ x-n8n-shared: &n8n-shared
     # Endpoints
     # https://docs.n8n.io/hosting/configuration/environment-variables/endpoints/
     N8N_WEBHOOK_URL: "https://${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}/"
+    # The public REST API stays on, but its Swagger "API playground" page at /api/v1/docs is off.
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/security/disable-the-public-api
+    N8N_PUBLIC_API_SWAGGERUI_DISABLED: "true"
 
     # Executions
     # https://docs.n8n.io/hosting/configuration/environment-variables/executions/
@@ -230,6 +233,15 @@ services:
       - "traefik.http.routers.n8n-webhook.entrypoints=websecure"
       - "traefik.http.routers.n8n-webhook.tls.certresolver=letsencrypt"
       - "traefik.http.routers.n8n-webhook.service=n8n-service"
+      # The public API's spec file. n8n serves it whenever the public API is on, even with the
+      # Swagger page off, so Traefik refuses it on both hostnames (403: no client is 127.0.0.1).
+      - "traefik.http.middlewares.n8n-deny-all.ipallowlist.sourcerange=127.0.0.1/32"
+      - "traefik.http.routers.n8n-api-spec.rule=(Host(`${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}`) || Host(`${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}`)) && Path(`/api/v1/openapi.yml`)"
+      - "traefik.http.routers.n8n-api-spec.priority=1000"
+      - "traefik.http.routers.n8n-api-spec.entrypoints=websecure"
+      - "traefik.http.routers.n8n-api-spec.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.n8n-api-spec.middlewares=n8n-deny-all"
+      - "traefik.http.routers.n8n-api-spec.service=n8n-service"
       # Backend service
       - "traefik.http.services.n8n-service.loadbalancer.server.port=5678"
       # Security headers come from the shared `security-headers` middleware applied at the
