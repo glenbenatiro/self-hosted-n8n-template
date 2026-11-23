@@ -39,7 +39,7 @@ x-n8n-shared: &n8n-shared
   stop_grace_period: 90s
   environment: &n8n-environment
     # Database
-    # https://docs.n8n.io/hosting/configuration/environment-variables/database/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/database
     DB_TYPE: postgresdb
     DB_POSTGRESDB_HOST: postgres
     DB_POSTGRESDB_PORT: "5432"
@@ -48,7 +48,7 @@ x-n8n-shared: &n8n-shared
     DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
 
     # Deployment
-    # https://docs.n8n.io/hosting/configuration/environment-variables/deployment/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/deployment
     N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
     N8N_EDITOR_BASE_URL: "https://${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}"
     N8N_PROTOCOL: ${N8N_PROTOCOL}
@@ -70,14 +70,14 @@ x-n8n-shared: &n8n-shared
     ENABLE_A365_OBSERVABILITY_EXPORTER: "false"
 
     # Endpoints
-    # https://docs.n8n.io/hosting/configuration/environment-variables/endpoints/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/endpoints
     N8N_WEBHOOK_URL: "https://${N8N_WEBHOOK_SUBDOMAIN}.${DOMAIN_NAME}/"
     # The public REST API stays on, but its Swagger "API playground" page at /api/v1/docs is off.
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/security/disable-the-public-api
     N8N_PUBLIC_API_SWAGGERUI_DISABLED: "true"
 
     # Executions
-    # https://docs.n8n.io/hosting/configuration/environment-variables/executions/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/executions
     EXECUTIONS_MODE: queue
 
     # Binary data (files that pass through workflows). In queue mode n8n stores them in Postgres
@@ -87,14 +87,8 @@ x-n8n-shared: &n8n-shared
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/scaling/handle-binary-data
     N8N_DEFAULT_BINARY_DATA_MODE: database
 
-    # Logs
-    # https://docs.n8n.io/hosting/configuration/environment-variables/logs/
-    N8N_LOG_LEVEL: info
-    N8N_LOG_OUTPUT: console
-    N8N_LOG_FORMAT: text
-
     # Queue mode
-    # https://docs.n8n.io/hosting/configuration/environment-variables/queue-mode/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/queue-mode
     # n8n 2.x only: n8n 3.0 always runs manual executions on workers and removes this variable.
     # On 2.x it is also what keeps the main instance from starting a task broker of its own.
     OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
@@ -105,7 +99,7 @@ x-n8n-shared: &n8n-shared
 
     # Security. Most of these are already the default in n8n 2.x. They stay explicit so a
     # changed default in a future release cannot quietly loosen them.
-    # https://docs.n8n.io/hosting/configuration/environment-variables/security/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/security
     N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
     N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
     N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
@@ -124,7 +118,7 @@ x-n8n-shared: &n8n-shared
 
     # Nodes. These are the n8n 3.0 defaults (2.x allowed 2 GiB and 5000 entries), set now so
     # nothing changes on the upgrade. Raise them if you decompress larger archives.
-    # https://docs.n8n.io/hosting/configuration/environment-variables/nodes/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/nodes
     N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456"
     N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
 
@@ -147,26 +141,22 @@ x-n8n-shared: &n8n-shared
     N8N_RUNNERS_TASK_TIMEOUT: &task-timeout "60"
 
     # Timezone and localization
-    # https://docs.n8n.io/hosting/configuration/environment-variables/timezone-localization/
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/timezone-and-localization
     GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
 
     # User management and 2FA
-    # https://docs.n8n.io/hosting/configuration/environment-variables/user-management-smtp-2fa/
-    N8N_EMAIL_MODE: "smtp"
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/user-management-and-2fa
     N8N_SMTP_HOST: ${N8N_SMTP_HOST}
     N8N_SMTP_PORT: ${N8N_SMTP_PORT}
     N8N_SMTP_USER: ${N8N_SMTP_USER}
     N8N_SMTP_PASS: ${N8N_SMTP_PASS}
     N8N_SMTP_SENDER: ${N8N_SMTP_SENDER}
+    # Implicit TLS, for port 465. For port 587, set this to "false" and N8N_SMTP_STARTTLS to "true".
     N8N_SMTP_SSL: "true"
     N8N_INVITE_LINKS_EMAIL_ONLY: "true"
 
-    # for Docker
-    # https://docs.n8n.io/hosting/installation/docker/#starting-n8n
+    # The container's own clock, used in its logs. GENERIC_TIMEZONE above is n8n's.
     TZ: ${GENERIC_TIMEZONE}
-
-    # extra
-    NODE_ENV: production
   volumes:
     - n8n_data:/home/node/.n8n
     - ./local-files:/files

@@ -16,6 +16,22 @@ flowchart LR
 
 The runner shares a private network only with its worker, with no internet access, so code in a Code node cannot reach Postgres, Redis or anything outside. The runner image is the hardened `-distroless` variant, running as an unprivileged user with a read-only filesystem. JavaScript and Python Code nodes both work.
 
+## Containers
+
+Every image is pinned to an exact version, so nothing changes until you change it.
+
+| Container | Image | What it does |
+|---|---|---|
+| `n8n-web` | `n8nio/n8n:<N8N_VERSION>` | The main instance: the editor, the API, webhooks and triggers. It puts each execution on the queue. |
+| `n8n-worker` | `n8nio/n8n:<N8N_VERSION>` | Takes executions off the queue and runs them, manual runs from the editor included. |
+| `n8n-worker-runner` | `n8nio/runners:<N8N_VERSION>-distroless` | Runs Code node code for its worker. It must be the same version as n8n, so it uses the same `N8N_VERSION`. |
+| `postgres` | `postgres:18.7` | The database: workflows, encrypted credentials, execution history, and files that pass through workflows. |
+| `redis` | `redis:8.10.3-alpine` | The queue between the main instance and the workers. |
+
+Traefik, in front of n8n, lives in the `traefik/` folder (`traefik:v3.7.19`).
+
+Queue mode is what needs Redis and a worker. Without it, n8n runs every execution inside the main instance and needs only Postgres and a runner. This template uses queue mode so heavy workflows never slow the editor down, and so you can add workers later.
+
 ## Prerequisites
 
 - Docker and Docker Compose
@@ -39,9 +55,67 @@ The runner shares a private network only with its worker, with no internet acces
    docker compose up -d --wait
    ```
 
-The editor will be at `https://<N8N_EDITOR_SUBDOMAIN>.<DOMAIN_NAME>` once Traefik has issued the certificate.
+4. Open the editor at `https://<N8N_EDITOR_SUBDOMAIN>.<DOMAIN_NAME>` once Traefik has issued the certificate, and create the owner account straight away. Until you do, whoever opens the editor first can create it.
 
 Keep a copy of `N8N_ENCRYPTION_KEY` somewhere safe outside this server. Without it, the credentials stored in the database cannot be decrypted.
+
+## Settings
+
+### Your values, in `.env`
+
+`.env.example` lists them all with comments.
+
+| Setting | What to put |
+|---|---|
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | The database name, user and a long random password. |
+| `N8N_VERSION` | The exact n8n version to run, for example `2.48.7`. `update-n8n.sh` keeps it current. |
+| `N8N_UPDATE_CHANNEL`, `N8N_AUTO_UPDATE_MAJOR`, `N8N_UPDATE_KEEP_BACKUPS` | How `update-n8n.sh` updates (see "Versions and updates"). |
+| `N8N_ENCRYPTION_KEY` | `openssl rand -hex 32`. n8n encrypts stored credentials with it. Back it up. |
+| `N8N_EDITOR_SUBDOMAIN`, `N8N_WEBHOOK_SUBDOMAIN`, `DOMAIN_NAME` | The editor and webhook hostnames, for example `n8n` and `hooks-n8n` on `example.com`. Both need DNS records pointing at the server. |
+| `N8N_PROTOCOL` | `https`. |
+| `N8N_PROXY_HOPS` | How many reverse proxies sit in front of n8n: `1` for Traefik alone, `2` for Cloudflare plus Traefik. |
+| `REDIS_PASSWORD` | A long random password. |
+| `N8N_RUNNERS_AUTH_TOKEN` | `openssl rand -hex 32`. Shared by each worker and its task runner. |
+| `GENERIC_TIMEZONE` | Your timezone, for example `Australia/Sydney`. Schedule Trigger nodes use it. |
+| `N8N_SMTP_HOST`, `N8N_SMTP_PORT`, `N8N_SMTP_USER`, `N8N_SMTP_PASS`, `N8N_SMTP_SENDER` | The mail server for invitations and password resets. |
+
+### Set in `docker-compose.yml`
+
+Each one has a comment and a docs link in the file. The groups:
+
+**Needed for this layout.** `DB_TYPE` and the `DB_POSTGRESDB_*` settings point n8n at Postgres. `EXECUTIONS_MODE=queue` turns on queue mode (the default is `regular`), and the `QUEUE_BULL_REDIS_*` settings point it at Redis. `QUEUE_HEALTH_CHECK_ACTIVE=true` gives workers the health endpoint their health check uses. `N8N_RUNNERS_MODE=external` and `N8N_RUNNERS_AUTH_TOKEN` move Code nodes into the runner container, `N8N_RUNNERS_BROKER_LISTEN_ADDRESS=0.0.0.0` (workers only) lets the runner reach its worker, and `N8N_RUNNERS_TASK_BROKER_URI` on the runner says where its worker is. `N8N_EDITOR_BASE_URL` and `N8N_WEBHOOK_URL` are the URLs n8n shows in the editor and in emails. `OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true` runs manual executions on workers too; it is for n8n 2.x only.
+
+**Set now to their n8n 3.0 values,** so nothing changes when you upgrade:
+
+| Setting | Value here | n8n 2.x default |
+|---|---|---|
+| `N8N_RUNNERS_TASK_TIMEOUT` (Code node time limit, seconds) | `60` | `300` |
+| `N8N_UNVERIFIED_PACKAGES_ENABLED` | `false` | `true` |
+| `N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES` | `268435456` (256 MiB) | 2 GiB |
+| `N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES` | `1000` | `5000` |
+| `N8N_DEFAULT_BINARY_DATA_MODE` | `database` | `database` in queue mode; 3.0 removes the old in-memory mode |
+| `N8N_MIGRATE_FS_STORAGE_PATH` | `true` | does the storage folder rename that 3.0 needs |
+
+**Security.** `N8N_PUBLIC_API_SWAGGERUI_DISABLED=true` turns off the API playground page. `N8N_EXPRESSION_ENGINE_FRONTEND=quickjs` sandboxes expression previews in the editor. `N8N_RESTRICT_FILE_ACCESS_TO=/files` limits file nodes to `local-files/`. `N8N_INVITE_LINKS_EMAIL_ONLY=true` sends invitation links only by email. `N8N_BLOCK_ENV_ACCESS_IN_NODE`, `N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES`, `N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS`, `N8N_GIT_NODE_DISABLE_BARE_REPOS` and `N8N_SECURE_COOKIE` are already `true` by default; they are set so a changed default in a future release cannot loosen them.
+
+**Privacy.** `N8N_DIAGNOSTICS_ENABLED`, `N8N_VERSION_NOTIFICATIONS_ENABLED` and `ENABLE_A365_OBSERVABILITY_EXPORTER` are `false`, so n8n sends out nothing it does not need. `N8N_TEMPLATES_ENABLED` stays `true` for the templates library; set it to `false` if nobody uses it.
+
+**Running it.** `N8N_GRACEFUL_SHUTDOWN_TIMEOUT=60` gives running executions a minute to finish when a container stops (the default is 30 seconds), and `stop_grace_period: 90s` gives Docker time to wait for that. `N8N_SMTP_SSL=true` suits port 465. `TZ` sets the container's own clock for its logs.
+
+### Defaults kept on purpose
+
+These are not set, so n8n's defaults apply. Change them in the shared n8n environment if they do not suit you.
+
+| What | Default | When to change it |
+|---|---|---|
+| Execution history | Kept 14 days or 10,000 executions, then pruned with its files (`EXECUTIONS_DATA_MAX_AGE` in hours, `EXECUTIONS_DATA_PRUNE_MAX_COUNT`) | Lower it if the database grows too big for the disk. |
+| Workflow time limit | None (`EXECUTIONS_TIMEOUT=-1`) | Set one if a stuck workflow could hold a worker forever. Workflows can set their own limit up to `EXECUTIONS_TIMEOUT_MAX` (1 hour). |
+| Executions at once | 10 per worker | Add a worker before raising it. |
+| Database connections | 2 per n8n process (`DB_POSTGRESDB_POOL_SIZE`) | Only if n8n reports waiting for connections under load. |
+| SSRF protection | Off (`N8N_SSRF_PROTECTION_ENABLED`) | Turn it on to stop HTTP Request nodes reaching private addresses (Postgres, Redis, your own network). List any internal hosts your workflows call in its allow list first. |
+| Metrics endpoint | Off (`N8N_METRICS`) | If you turn it on, block `/metrics` in Traefik first, as is done for the API spec file: it would otherwise be public. |
+| Public API | On, with an API key | Set `N8N_PUBLIC_API_DISABLED=true` if nothing uses it. |
+| Two-factor sign-in | Available to every user (`N8N_MFA_ENABLED`) | Leave it on. |
 
 ## Versions and updates
 
@@ -147,7 +221,7 @@ On n8n 3.x, a downgrade after n8n has written data with its rotatable encryption
 
 ## Getting ready for n8n 3.0
 
-n8n 3.0 has breaking changes. Read [the v3.0 breaking changes](https://docs.n8n.io/changelog/v30-breaking-changes/) and open **Settings > Migration Report** in n8n before you upgrade. This setup already handles the parts that touch deployment:
+n8n 3.0 has breaking changes. Read [the v3.0 breaking changes](https://docs.n8n.io/changelog/v30-breaking-changes) and open **Settings > Migration Report** in n8n before you upgrade. This setup already handles the parts that touch deployment:
 
 - Task runners run in external mode, which n8n recommends and which replaces the deprecated internal mode.
 - `N8N_WEBHOOK_URL` replaces `WEBHOOK_URL`, deprecated from n8n 2.35.0, and the deprecated `N8N_RUNNERS_ENABLED` is gone.
