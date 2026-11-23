@@ -198,17 +198,19 @@ echo "db backup written: $BACKUP ($(stat -c '%a' "$BACKUP"), $(stat -c '%s' "$BA
 # Stop every n8n container before starting the new version. Workers stop first (Compose
 # stops dependents first) and finish running executions, up to N8N_GRACEFUL_SHUTDOWN_TIMEOUT,
 # while their task runners are still up; the runners stop last.
+# Sorted by the image each running container uses. (`docker compose config --images <service>`
+# would also list the images of the service's dependencies, so it cannot tell them apart.)
 N8N_SERVICES=""
 RUNNER_SERVICES=""
-for svc in $(docker compose config --services); do
-  case "$(docker compose config --images "$svc")" in
-    n8nio/n8n:*) N8N_SERVICES="$N8N_SERVICES $svc" ;;
-    n8nio/runners:*) RUNNER_SERVICES="$RUNNER_SERVICES $svc" ;;
+while read -r svc img; do
+  case "$img" in
+    n8nio/n8n:*|docker.io/n8nio/n8n:*) N8N_SERVICES="$N8N_SERVICES $svc" ;;
+    n8nio/runners:*|docker.io/n8nio/runners:*) RUNNER_SERVICES="$RUNNER_SERVICES $svc" ;;
   esac
-done
+done < <(docker compose ps --format '{{.Service}} {{.Image}}')
 echo "stopping n8n:$N8N_SERVICES${RUNNER_SERVICES:+, then the task runners:$RUNNER_SERVICES}"
 # shellcheck disable=SC2086
-docker compose stop $N8N_SERVICES
+[ -z "$N8N_SERVICES" ] || docker compose stop $N8N_SERVICES
 # shellcheck disable=SC2086
 [ -z "$RUNNER_SERVICES" ] || docker compose stop $RUNNER_SERVICES
 
