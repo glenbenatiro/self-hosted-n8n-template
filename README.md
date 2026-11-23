@@ -1,6 +1,6 @@
 # Self-Hosted n8n Template
 
-A Docker Compose template for self-hosting n8n on a single VPS, with Traefik in front for HTTPS. It reflects a production setup that has been running for about a year, not a toy example.
+A Docker Compose template for self-hosting n8n 3.3.0 and later on a single VPS, with Traefik in front for HTTPS. It reflects a production setup that has been running for about a year, not a toy example, and every setting is checked against n8n's current self-hosting docs. Use it as the reference for any n8n instance you run: a new one starts from it, and an existing one moves onto it (the n8n README explains how).
 
 The stack is n8n in queue mode (PostgreSQL and Redis) behind a Traefik reverse proxy, with Code node code running in separate, locked-down task runner containers. Traefik lives in its own folder so it can be reused for other services too, but the focus here is a solid n8n deployment.
 
@@ -9,7 +9,7 @@ Each part lives in its own folder with its own `docker-compose.yml`, `.env.examp
 ## What is inside
 
 - `traefik/` - Traefik v3 reverse proxy. Terminates HTTPS with automatic Let's Encrypt certificates and routes traffic to your other services. Includes a configuration for servers behind Cloudflare. Set this up first.
-- `n8n/` - Self-hosted n8n in queue mode, with PostgreSQL, Redis and external task runners, sitting behind Traefik. Pinned to an exact n8n version, with a script that moves it to the newest stable release, and ready for n8n 3.0.
+- `n8n/` - Self-hosted n8n 3.3.0 in queue mode, with PostgreSQL, Redis and external task runners, sitting behind Traefik. Every image is pinned to an exact version, with a script that updates n8n safely (to the newest release on a channel, or to an exact version) and one for Postgres major upgrades.
 
 ## How it fits together
 
@@ -62,6 +62,7 @@ To update a live server to a newer version of this repo:
    ```bash
    docker compose up -d --wait
    ```
+   If the pull moved n8n's Postgres to a new major version (for example 17 to 18), run `./upgrade-postgres.sh` in the `n8n` folder instead of `docker compose up`. A plain `up` leaves Postgres refusing to start until you do (your data stays safe). The n8n README explains it.
 
 ## A note on security
 
