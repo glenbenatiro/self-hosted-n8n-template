@@ -9,7 +9,7 @@ Each part lives in its own folder with its own `docker-compose.yml`, `.env.examp
 ## What is inside
 
 - `traefik/` - Traefik v3 reverse proxy. Terminates HTTPS with automatic Let's Encrypt certificates and routes traffic to your other services. Includes a configuration for servers behind Cloudflare. Set this up first.
-- `n8n/` - Self-hosted n8n in queue mode, with PostgreSQL, Redis and external task runners, sitting behind Traefik. Pinned to an exact n8n version, with a script that moves it to the newest stable release, and ready for n8n 3.0.
+- `n8n/` - Self-hosted n8n in queue mode, with PostgreSQL, Redis and external task runners, sitting behind Traefik. Pinned to an exact n8n version, with a script that moves it to the newest stable release, a script for Postgres major upgrades, and ready for n8n 3.0.
 
 ## How it fits together
 
@@ -62,6 +62,7 @@ To update a live server to a newer version of this repo:
    ```bash
    docker compose up -d --wait
    ```
+   If the pull moved n8n's Postgres to a new major version (for example 17 to 18), run `./upgrade-postgres.sh` in the `n8n` folder instead of `docker compose up`. A plain `up` leaves Postgres refusing to start until you do (your data stays safe). The n8n README explains it.
 
 ## A note on security
 

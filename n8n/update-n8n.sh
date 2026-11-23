@@ -4,8 +4,11 @@
 #
 # The stack runs an exact version (N8N_VERSION in .env). This script finds the version the
 # channel tag (n8nio/n8n:stable or n8nio/n8n:beta) points at. If that is newer, it pulls n8n
-# (and the matching task runner image, if the stack uses one), backs up the Postgres DB,
-# writes the new version into .env and recreates the stack, then waits for it to come up.
+# (and the matching task runner image, if the stack uses one), backs up the Postgres DB and
+# notes its newest migration, stops every n8n container, writes the new version into .env
+# and starts the stack again, then waits for it to come up. Stopping first means old and new
+# n8n versions never run against the database at the same time, as n8n asks for queue mode.
+# https://docs.n8n.io/deploy/host-n8n/keep-n8n-running/update-n8n
 #
 # Settings live in .env, so the script itself is the same on every server:
 #   N8N_UPDATE_CHANNEL       stable (default) or beta
@@ -147,7 +150,11 @@ if [ "$USES_RUNNERS" = true ]; then
   docker pull -q "n8nio/runners:$TARGET-distroless" >/dev/null
 fi
 
-# n8n database migrations cannot be rolled back, so back up first.
+# n8n runs database migrations when it starts. Undoing them takes `n8n db:revert`, one
+# migration at a time, or a restore of this backup (see README, "Roll back an update").
+# Record where the migrations stand now, then back up.
+MIGRATION="$(docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT name FROM migrations ORDER BY id DESC LIMIT 1"')"
+echo "newest database migration before the update: ${MIGRATION:-unknown}"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 STAMP="$(date '+%Y%m%d-%H%M%S')"
@@ -162,10 +169,27 @@ mv "$BACKUP.partial" "$BACKUP"
 trap - EXIT
 echo "db backup written: $BACKUP ($(stat -c '%a' "$BACKUP"), $(stat -c '%s' "$BACKUP") bytes)"
 
+# Stop every n8n container before starting the new version. Workers stop first (Compose
+# stops dependents first) and finish running executions, up to N8N_GRACEFUL_SHUTDOWN_TIMEOUT,
+# while their task runners are still up; the runners stop last.
+N8N_SERVICES=""
+RUNNER_SERVICES=""
+for svc in $(docker compose config --services); do
+  case "$(docker compose config --images "$svc")" in
+    n8nio/n8n:*) N8N_SERVICES="$N8N_SERVICES $svc" ;;
+    n8nio/runners:*) RUNNER_SERVICES="$RUNNER_SERVICES $svc" ;;
+  esac
+done
+echo "stopping n8n:$N8N_SERVICES${RUNNER_SERVICES:+, then the task runners:$RUNNER_SERVICES}"
+# shellcheck disable=SC2086
+docker compose stop $N8N_SERVICES
+# shellcheck disable=SC2086
+[ -z "$RUNNER_SERVICES" ] || docker compose stop $RUNNER_SERVICES
+
 # Record the new version, then apply it. sed -i keeps the file's owner and mode.
 sed -i "s/^N8N_VERSION=.*/N8N_VERSION=$TARGET/" "$ENV_FILE"
 if [ "$(env_get N8N_VERSION)" != "$TARGET" ]; then
-  echo "ERROR: failed to write N8N_VERSION=$TARGET to .env"
+  echo "ERROR: failed to write N8N_VERSION=$TARGET to .env. n8n is stopped; start it with 'docker compose up -d --wait'."
   exit 1
 fi
 
@@ -173,7 +197,8 @@ if docker compose up -d --wait --wait-timeout "$WAIT_TIMEOUT"; then
   echo "stack up on $TARGET"
 else
   echo "ERROR: stack not healthy on $TARGET after ${WAIT_TIMEOUT}s. Check 'docker compose ps' and logs."
-  echo "To roll back: restore $BACKUP into Postgres, then set N8N_VERSION=$CURRENT in .env."
+  echo "To roll back, follow \"Roll back an update\" in the README: the backup is $BACKUP,"
+  echo "the previous version is $CURRENT, and the newest migration before the update was ${MIGRATION:-unknown}."
   exit 1
 fi
 
@@ -184,11 +209,12 @@ find "$BACKUP_DIR" -maxdepth 1 -name 'n8n-db-*.sql.gz' -type f -printf '%f\n' \
   | sort -r | tail -n +"$((KEEP_BACKUPS + 1))" \
   | while IFS= read -r old; do rm -f -- "$BACKUP_DIR/$old"; echo "pruned backup: $old"; done
 # Then n8n images other than the current and previous version (images still in use are
-# skipped), then dangling layers.
+# skipped), then n8n's own untagged images, such as the old :stable after the tag moves. The
+# label filter leaves every other project's images alone on a shared server.
 docker image ls --format '{{.Repository}}:{{.Tag}}' \
   | grep -E '^n8nio/(n8n|runners):[0-9]' \
   | grep -vE ":($(printf '%s' "$TARGET" | sed 's/\./\\./g')|$(printf '%s' "$CURRENT" | sed 's/\./\\./g'))(-distroless)?$" \
   | xargs -r docker image rm >/dev/null 2>&1 || true
-docker image prune -f
+docker image prune -f --filter "label=org.opencontainers.image.source=https://github.com/n8n-io/n8n"
 
 echo "update complete: $CURRENT -> $TARGET"

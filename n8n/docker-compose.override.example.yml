@@ -3,7 +3,7 @@
 # file automatically, so `docker compose up -d --wait` and update-n8n.sh both include it:
 #   cp docker-compose.override.example.yml docker-compose.override.yml
 #   docker compose up -d --wait
-# For a third worker, repeat the pattern with -3 names.
+# For a third worker, repeat the pattern with -3 names, including the event log path.
 
 networks:
   runners-worker-2:
@@ -18,6 +18,11 @@ services:
     networks: !override
       - internal
       - runners-worker-2
+    environment:
+      # Both workers share the n8n_data volume, so each needs its own event log file. The first
+      # worker keeps n8n's default name (n8nEventLog-worker.log, rotated to -1, -2, ...).
+      # https://docs.n8n.io/administer/observe-and-log/stream-logs-to-external-systems#per-process-event-log-files
+      N8N_EVENTBUS_LOGWRITER_LOGFULLPATH: /home/node/.n8n/n8nEventLog-n8n-worker-2.log
 
   n8n-worker-2-runner:
     extends:

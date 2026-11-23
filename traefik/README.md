@@ -74,7 +74,7 @@ networks:
 - The dashboard is turned off and anonymous usage reporting is disabled.
 - Ports are published on IPv4 only. Docker publishes a bare `80:80` on IPv6 too, and Docker's port rules skip the host firewall.
 - The access log goes to `logs/access.log` as JSON. Authorization and cookie headers are never logged.
-- The Traefik image is pinned (`traefik:v3.7.14`). Bump it deliberately rather than tracking a floating tag.
+- The Traefik image is pinned (`traefik:v3.7.19`). Bump it deliberately rather than tracking a floating tag.
 - The `dynamic/` folder holds file-provider config, loaded automatically and mounted read-only: `tls.yml`, `security-headers.yml` and `cloudflare.yml` (only used by the Cloudflare configuration).
 
 ## Behind Cloudflare
