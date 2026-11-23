@@ -144,8 +144,10 @@ x-n8n-shared: &n8n-shared
     interval: 30s
     timeout: 5s
     retries: 3
-    # Database migrations run on the first start after an upgrade and can take a while.
-    start_period: 120s
+    # Database migrations run on the first start after an upgrade and can take minutes on a
+    # busy server. Failures in this window do not count, and it is checked every 5 seconds, so a
+    # longer window never delays a healthy n8n.
+    start_period: 300s
     start_interval: 5s
 
 x-runner-shared: &runner-shared
