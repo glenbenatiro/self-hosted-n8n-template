@@ -37,12 +37,13 @@ x-n8n-shared: &n8n-shared
   # lets the Docker service take to stop (TimeoutStopSec) when Docker itself restarts.
   # https://docs.docker.com/reference/compose-file/services/#stop_grace_period
   stop_grace_period: 90s
+  # Only settings that differ from n8n's defaults, plus security settings pinned on purpose so a
+  # changed default cannot loosen them. The README lists each one, and the defaults kept.
   environment: &n8n-environment
     # Database
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/database
     DB_TYPE: postgresdb
     DB_POSTGRESDB_HOST: postgres
-    DB_POSTGRESDB_PORT: "5432"
     DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
     DB_POSTGRESDB_USER: ${POSTGRES_USER}
     DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -52,11 +53,8 @@ x-n8n-shared: &n8n-shared
     N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
     N8N_EDITOR_BASE_URL: "https://${N8N_EDITOR_SUBDOMAIN}.${DOMAIN_NAME}"
     N8N_PROTOCOL: ${N8N_PROTOCOL}
-    # The workflow templates library in the editor. It loads templates from n8n's servers; set it
-    # to "false" if nobody uses it.
-    N8N_TEMPLATES_ENABLED: "true"
     N8N_PROXY_HOPS: ${N8N_PROXY_HOPS}
-    # Seconds n8n waits for running executions to finish when it is stopped.
+    # Seconds n8n waits for running executions to finish when it is stopped (default 30).
     N8N_GRACEFUL_SHUTDOWN_TIMEOUT: "60"
 
     # Nothing sent to n8n or Microsoft that the instance does not need. update-n8n.sh handles
@@ -76,83 +74,62 @@ x-n8n-shared: &n8n-shared
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/security/disable-the-public-api
     N8N_PUBLIC_API_SWAGGERUI_DISABLED: "true"
 
-    # Executions
-    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/executions
+    # Queue mode (the default is regular mode): the main instance puts each execution on a Redis
+    # queue and workers run it, manual runs from the editor included.
+    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/scaling/enable-queue-mode
     EXECUTIONS_MODE: queue
+    QUEUE_BULL_REDIS_HOST: redis
+    QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
+    # Workers serve /healthz/readiness, which their health check below uses.
+    QUEUE_HEALTH_CHECK_ACTIVE: "true"
 
-    # Binary data (files that pass through workflows). In queue mode n8n stores them in Postgres
-    # by default; this says so explicitly, because n8n 3.0 drops the old in-memory mode and
-    # changes nothing here. They are pruned with their executions and are part of every database
-    # backup. S3 and Azure storage need a paid licence.
+    # Files that pass through workflows (binary data) are stored in Postgres. That is already the
+    # queue-mode default; it is pinned because it decides what a database backup contains. They
+    # are pruned with their executions. S3 and Azure storage need a paid licence.
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/scaling/handle-binary-data
     N8N_DEFAULT_BINARY_DATA_MODE: database
 
-    # Queue mode
-    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/queue-mode
-    # n8n 2.x only: n8n 3.0 always runs manual executions on workers and removes this variable.
-    # On 2.x it is also what keeps the main instance from starting a task broker of its own.
-    OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
-    QUEUE_BULL_REDIS_HOST: redis
-    QUEUE_BULL_REDIS_PORT: "6379"
-    QUEUE_BULL_REDIS_PASSWORD: ${REDIS_PASSWORD}
-    QUEUE_HEALTH_CHECK_ACTIVE: "true"
-
-    # Security. Most of these are already the default in n8n 2.x. They stay explicit so a
-    # changed default in a future release cannot quietly loosen them.
+    # Security
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/security
+    # Already n8n's defaults, pinned so a changed default cannot loosen them.
     N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
     N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
     N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
     N8N_GIT_NODE_DISABLE_BARE_REPOS: "true"
     N8N_SECURE_COOKIE: "true"
-    # The Read/Write Files from Disk node may only use the mounted local-files folder.
-    N8N_RESTRICT_FILE_ACCESS_TO: /files
-    # Only verified community nodes. This is the n8n 3.0 default; set it to "true" only if you
+    # Only verified community nodes (the default since n8n 3.0). Set it to "true" only if you
     # need an unverified community package from npm.
     N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
+    # The Read/Write Files from Disk node may only use the mounted local-files folder.
+    N8N_RESTRICT_FILE_ACCESS_TO: /files
     # The editor evaluates expression previews in a QuickJS sandbox instead of the browser's own
-    # engine, which n8n strongly recommends (from 2.41.0). Workflows themselves already run
-    # expressions in the backend's isolated engine (the default, `vm`).
+    # engine, which n8n strongly recommends. Workflows themselves run expressions in the
+    # backend's isolated engine (the default, `vm`).
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/expression-engine
     N8N_EXPRESSION_ENGINE_FRONTEND: quickjs
 
-    # Nodes. These are the n8n 3.0 defaults (2.x allowed 2 GiB and 5000 entries), set now so
-    # nothing changes on the upgrade. Raise them if you decompress larger archives.
-    # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/nodes
-    N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456"
-    N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
-
-    # Storage folder. n8n 3.0 renames ~/.n8n/binaryData to ~/.n8n/storage and refuses to start
-    # if both exist. This does the rename now, on 2.x (with binary data in Postgres the folder is
-    # usually empty, but it still exists). Remove it once on n8n 3.0, which drops the variable.
-    N8N_MIGRATE_FS_STORAGE_PATH: "true"
-
-    # Task runners in external mode: Code node code runs in a separate runner container
-    # beside each worker, not inside n8n. The main instance needs no runner, because all
-    # executions (manual ones too) run on workers. Only workers open the task broker to their
-    # runner (N8N_RUNNERS_BROKER_LISTEN_ADDRESS on n8n-worker below); elsewhere it stays on
-    # 127.0.0.1, the default.
+    # Task runners in external mode: Code node code runs in a separate runner container beside
+    # each worker, not inside n8n. The main instance in queue mode runs no code, so it needs no
+    # runner. Only workers open the task broker to their runner (N8N_RUNNERS_BROKER_LISTEN_ADDRESS
+    # on n8n-worker below). The Code node time limit is n8n's default, 60 seconds; to change it,
+    # set N8N_RUNNERS_TASK_TIMEOUT here and on the runner service, which enforces it too.
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-task-runners
     N8N_RUNNERS_MODE: external
     N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
-    # Code node time limit in seconds. 60 is the n8n 3.0 default (2.x used 300). The runner
-    # enforces it too, so the runner service reuses this value. Raise it here if a Code node
-    # needs longer.
-    N8N_RUNNERS_TASK_TIMEOUT: &task-timeout "60"
 
     # Timezone and localization
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/timezone-and-localization
     GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
 
-    # User management and 2FA
+    # User management and email. n8n's default is implicit TLS on port 465; for port 587 (STARTTLS)
+    # add N8N_SMTP_SSL: "false".
     # https://docs.n8n.io/deploy/host-n8n/configure-n8n/basic-configuration/use-environment-variables/user-management-and-2fa
     N8N_SMTP_HOST: ${N8N_SMTP_HOST}
     N8N_SMTP_PORT: ${N8N_SMTP_PORT}
     N8N_SMTP_USER: ${N8N_SMTP_USER}
     N8N_SMTP_PASS: ${N8N_SMTP_PASS}
     N8N_SMTP_SENDER: ${N8N_SMTP_SENDER}
-    # Implicit TLS, for port 465. For port 587, set this to "false" and N8N_SMTP_STARTTLS to "true".
-    N8N_SMTP_SSL: "true"
+    # Invitation links go only by email, not shown to the inviting admin.
     N8N_INVITE_LINKS_EMAIL_ONLY: "true"
 
     # The container's own clock, used in its logs. GENERIC_TIMEZONE above is n8n's.
@@ -306,7 +283,6 @@ services:
     environment:
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
       N8N_RUNNERS_TASK_BROKER_URI: http://n8n-worker:5679
-      N8N_RUNNERS_TASK_TIMEOUT: *task-timeout
       # Code nodes use the same default timezone as n8n (the runner's own default is New York).
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
     depends_on:

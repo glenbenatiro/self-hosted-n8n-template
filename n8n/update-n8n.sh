@@ -16,8 +16,13 @@
 #   N8N_UPDATE_KEEP_BACKUPS  how many DB backups to keep, newest first (default 7)
 #
 # Safe to run any time: it is a no-op when there is nothing newer, and it never moves to an
-# older version. Run it daily from cron (see README). `update-n8n.sh --check` prints what it
-# would do and changes nothing.
+# older version. Run it daily from cron (see README).
+#
+#   update-n8n.sh                  update to the newest release on the channel
+#   update-n8n.sh --check          print what a run would do, and change nothing
+#   update-n8n.sh --to 3.3.1       update to that exact version instead of the channel's, the same
+#                                  way (backup, coordinated restart), new major versions included.
+#                                  For versions no channel points at, such as early access ones.
 #
 set -euo pipefail
 
@@ -28,11 +33,19 @@ APT_WAIT_MAX=3600         # seconds to wait for a running OS package upgrade to 
 # ---------------------------------------------------------------------------
 
 CHECK_ONLY=false
-case "${1:-}" in
-  "") ;;
-  --check) CHECK_ONLY=true ;;
-  *) echo "usage: $0 [--check]" >&2; exit 2 ;;
-esac
+TO_VERSION=""
+usage() { echo "usage: $0 [--check] [--to <version>]" >&2; exit 2; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) CHECK_ONLY=true; shift ;;
+    --to) [ $# -ge 2 ] || usage; TO_VERSION="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+if [ -n "$TO_VERSION" ] && ! [[ "$TO_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "--to needs an exact version such as 3.3.1, not '$TO_VERSION'" >&2
+  exit 2
+fi
 
 # Resolve the stack directory from this script's own location, so the script
 # works wherever you put the repo (no hardcoded path).
@@ -83,7 +96,11 @@ if ! [[ "$KEEP_BACKUPS" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: N8N_UPDATE_KEEP_BACKUPS in .env must be a whole number of 1 or more, not '$KEEP_BACKUPS'"
   exit 1
 fi
-echo "channel: $CHANNEL, running: $CURRENT, new major versions: ${ALLOW_MAJOR:-false}, backups kept: $KEEP_BACKUPS"
+if [ -n "$TO_VERSION" ]; then
+  echo "target: $TO_VERSION (set with --to), running: $CURRENT, backups kept: $KEEP_BACKUPS"
+else
+  echo "channel: $CHANNEL, running: $CURRENT, new major versions: ${ALLOW_MAJOR:-false}, backups kept: $KEEP_BACKUPS"
+fi
 
 # The OS package upgrade (unattended-upgrades) can restart Docker. Pulling or recreating
 # containers at the same moment fails, so wait for it to finish first.
@@ -109,12 +126,16 @@ if apt_busy; then
   fi
 fi
 
-# Ask the registry where the channel tag points now. Downloads layers only if it moved.
-docker pull -q "n8nio/n8n:$CHANNEL" >/dev/null
-TARGET="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "n8nio/n8n:$CHANNEL")"
-if ! [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ERROR: could not read a version from n8nio/n8n:$CHANNEL (got '$TARGET')"
-  exit 1
+if [ -n "$TO_VERSION" ]; then
+  TARGET="$TO_VERSION"
+else
+  # Ask the registry where the channel tag points now. Downloads layers only if it moved.
+  docker pull -q "n8nio/n8n:$CHANNEL" >/dev/null
+  TARGET="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "n8nio/n8n:$CHANNEL")"
+  if ! [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "ERROR: could not read a version from n8nio/n8n:$CHANNEL (got '$TARGET')"
+    exit 1
+  fi
 fi
 
 if [ "$TARGET" = "$CURRENT" ]; then
@@ -122,10 +143,15 @@ if [ "$TARGET" = "$CURRENT" ]; then
   exit 0
 fi
 if [ "$(printf '%s\n%s\n' "$CURRENT" "$TARGET" | sort -V | tail -n 1)" = "$CURRENT" ]; then
+  if [ -n "$TO_VERSION" ]; then
+    echo "running $CURRENT, newer than $TARGET. To go back, follow \"Roll back an update\" in the README."
+    exit 1
+  fi
   echo "running $CURRENT, newer than :$CHANNEL ($TARGET) - nothing to do"
   exit 0
 fi
-if [ "${CURRENT%%.*}" != "${TARGET%%.*}" ] && [ "$ALLOW_MAJOR" != "true" ]; then
+# A version chosen with --to is a decision already made, so only the channel is held back here.
+if [ -z "$TO_VERSION" ] && [ "${CURRENT%%.*}" != "${TARGET%%.*}" ] && [ "$ALLOW_MAJOR" != "true" ]; then
   echo "SKIPPED: :$CHANNEL is a new major version ($CURRENT -> $TARGET)."
   echo "Read the breaking changes, then set N8N_VERSION=$TARGET by hand or N8N_AUTO_UPDATE_MAJOR=true in .env."
   exit 0
@@ -138,7 +164,7 @@ if docker compose config --images | grep -q '^n8nio/runners:'; then
 fi
 
 if [ "$CHECK_ONLY" = true ]; then
-  echo "would update $CURRENT -> $TARGET (back up the DB, set N8N_VERSION, recreate the stack)"
+  echo "would update $CURRENT -> $TARGET (back up the DB, stop n8n, set N8N_VERSION, start it again)"
   exit 0
 fi
 
