@@ -257,6 +257,9 @@ services:
       # Security headers come from the shared `security-headers` middleware applied at the
       # Traefik entrypoint (traefik/dynamic/security-headers.yml), so there are no per-service labels.
 
+  # One worker, with its own task runner (n8n-worker-runner, below). Do not add workers with
+  # `--scale`: each worker needs its own runner, which connects to that worker by name. To add
+  # a worker and runner pair, use docker-compose.override.example.yml (README, "Running more workers").
   n8n-worker:
     <<: *n8n-shared
     container_name: n8n-worker
